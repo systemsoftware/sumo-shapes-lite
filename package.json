@@ -1,0 +1,41 @@
+{
+  "dependencies": {
+    "discord-rpc-revamp": "^2.0.4",
+    "express": "^4.19.2",
+    "qrcodejs": "^1.0.0",
+    "socket.io": "^4.7.5"
+  },
+  "name": "sumo-shapes-lite",
+  "version": "1.0.0-lite",
+  "description": "Transform into geometric characters in fast-paced battles on an ever-changing stage!",
+  "main": "index.js",
+  "devDependencies": {
+    "@electron/notarize": "^2.5.0",
+    "electron": "^32.0.1",
+    "electron-builder": "^25.0.5",
+    "electron-builder-notarize": "^1.5.2"
+  },
+  "scripts": {
+    "start": "npx electron .",
+    "m": "electron-builder --mac --universal",
+    "w": "electron-builder --w --x64",
+    "l": "electron-builder --linux"
+  },
+  "author": "CoolStone Technologies",
+  "license": "MIT",
+  "build": {
+    "productName": "Sumo Shapes Lite",
+    "appId": "com.coolstone.sumo-shapes-lite",
+    "mac": {
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "category": "public.app-category.games",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  }
+}

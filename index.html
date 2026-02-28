@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sumo Shapes</title>
+  <script src="https://cdn.socket.io/4.7.3/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Honk&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+<style>
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background-color: #f0f0f0;
+      width: 100%;
+    }
+
+    body {
+      background:'BG';
+      overflow: hidden !important;
+      background-position: center;
+      background-size: cover;
+      background-repeat: no-repeat;
+    }
+
+    .plr {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family:sans-serif;
+      color: white;
+    }
+    h1{
+      color: #fff;
+      text-align: center;
+      width: 100%;
+      font-size: 35px;
+      position: fixed;
+      font-family: 'Honk', sans-serif;
+    }
+
+    .playerlist {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background-color: #333;
+      color: white;
+      padding: 5px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      flex-wrap: wrap;
+      z-index: 10000 !important;
+      font-family: Poppins, sans-serif;
+    }
+
+     
+    .player {
+            display: flex;
+            align-items: center;
+            margin: 2px 5px;
+        }
+        .player-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .player-info {
+            display: flex;
+            flex-direction: column;
+        }
+        .player-name {
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        .player-stats {
+            display: flex;
+            font-size: 0.8em;
+        }
+        .player-stats > span {
+            margin-right: 5px;
+        }
+
+    * {
+      user-select: none;
+    }
+
+    #leaderboard {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      width: 100%;
+      height: 100%;
+      z-index: 1000;
+      display: none;
+    }
+    #leaderboard-players {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: sans-serif;
+      margin: 10px;
+      height: 80%;
+      overflow-y: scroll;
+    }
+    #ltop{
+      font-family: Honk, sans-serif;
+      font-size: xx-large;
+    }
+
+    #playAgain {
+      position: absolute;
+      bottom: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 20px;
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      width: 50%;
+    }
+    
+    /* top left corner */
+    #lock {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 20px;
+      color: white;
+      display: none;
+    }
+
+    #alert {
+      height: 90%; 
+    width:100%;
+    display:flex;
+    align-items: center;
+    justify-content: center;
+    }
+  </style>
+</head>
+<body>
+<h1 id="alert">GAME IS LIVE - INVITE FRIENDS TO JOIN</h1>
+<div id="pl" class="playerlist">
+</div>
+
+<div id="leaderboard">
+  <label id="ltop">LEADERBOARD</label>
+  <div id="leaderboard-players">
+  </div>
+  <button id="playAgain" onclick="window.electron.playAgain()">Play Again</button>
+</div>
+</body>
+</html>
+
+<label id="lock" class="material-symbols-outlined" style="color: white;">lock</label>
+
+<audio id="bg_music" autoplay loop >
+  <source src="/bgmusic" type="audio/mpeg">
+</audio>
+<audio id="hit">
+  <source src="/hitsound" type="audio/mpeg">
+</audio>
+
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const lives = 'LIVES';
+  let allowFlying = 'ALLOW_FLIGHT';
+  const platforms = 'PLATFORMS';
+  const socket = io({
+    extraHeaders: {
+      'Access-Control-Allow-Origin': '*',
+      type: 'game'
+    }
+  });
+
+  let locked = "'LOCKED'" == 'true';
+
+  if(locked) document.getElementById('lock').style.display = 'block';
+
+  const deathOrder = [];
+
+  document.getElementById('bg_music').volume = 'BG_VOL' > 1 ? 'BG_VOL'/10 > 1 ? 1 : 'BG_VOL'/10 : 'BG_VOL';
+  document.getElementById('hit').volume = 'HIT_VOL' > 1 ? 'HIT_VOL'/10 > 1 ? 1 : 'HIT_VOL'/10 : 'HIT_VOL';
+
+
+  const { Engine, Render, Runner, Bodies, World, Body, Events } = Matter;
+
+  window.onresize = function() {
+    render.canvas.width = window.innerWidth;
+    render.canvas.height = window.innerHeight;
+  };
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const playerList = document.querySelector('.playerlist');
+      playerList.style.display = playerList.style.display === 'none' ? 'grid' : 'none';
+    }
+  });
+  
+  document.getElementById('pl').addEventListener('click', function() {
+    const playerList = document.querySelector('.playerlist');
+    playerList.style.display = playerList.style.display === 'none' ? 'grid' : 'none';
+  });
+
+  const engine = Engine.create();
+  const world = engine.world;
+
+  const render = Render.create({
+    element: document.body,
+    engine: engine,
+    options: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      background: 'transparent',
+      wireframes: false
+    }
+  });
+
+  Render.run(render);
+  Runner.run(Runner.create(), engine);
+
+  const players = {};
+  const playerSize = 'PLAYER_SIZE'
+
+  const playerListHeight = document.getElementById('pl').offsetHeight;
+
+const boundaries = [
+  Bodies.rectangle(window.innerWidth / 2, window.innerHeight - playerListHeight, 'PLATFORM_WIDTH', 50, { isStatic: true, label:"floor", render: { visible: true } }),
+];
+
+boundaries[0].render.fillStyle = "'PLATFORM_BG'";
+
+socket.on('lock', d => {
+  console.log('Locking game');
+  document.getElementById('lock').style.display = d == true ? 'block' : 'none';
+  locked = d
+})
+
+  World.add(world, boundaries);
+
+  function hexToRgb(hex) {
+    // Remove the hash at the start if it's there
+    hex = hex.replace(/^#/, '');
+    
+    // Parse the r, g, b values
+    let bigint = parseInt(hex, 16);
+    let r = (bigint >> 16) & 255;
+    let g = (bigint >> 8) & 255;
+    let b = bigint & 255;
+    
+    return [r, g, b];
+}
+
+function calculateLuminance(r, g, b) {
+    // Convert the RGB values to the sRGB color space
+    r = r / 255;
+    g = g / 255;
+    b = b / 255;
+    
+    // Apply the gamma correction
+    r = (r <= 0.03928) ? r / 12.92 : Math.pow(((r + 0.055) / 1.055), 2.4);
+    g = (g <= 0.03928) ? g / 12.92 : Math.pow(((g + 0.055) / 1.055), 2.4);
+    b = (b <= 0.03928) ? b / 12.92 : Math.pow(((b + 0.055) / 1.055), 2.4);
+    
+    // Calculate the luminance
+    return (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+}
+
+function isColorLight(hex) {
+    const [r, g, b] = hexToRgb(hex);
+    const luminance = calculateLuminance(r, g, b);
+    return luminance > 0.5;
+}
+
+  const newPlayer = (player) => {
+    const posX = Math.random() * window.innerWidth;
+    const posY = Math.random() * window.innerHeight;
+    const body = Bodies.circle(posX, posY, playerSize / 2, {
+      label: player.id,
+      restitution: 0.5,
+      friction: 0.5,
+      isStatic: false,
+      frictionAir: 0.02,
+      render: {
+        visible: false
+      }
+    });
+
+
+    World.add(world, body);
+    players[player.id] = { ...player, body, lives, jumpCount: 0, isJumping: false, knockback: 1, isGrounded: false};
+
+    const el = document.createElement('div');
+    el.id = player.id;
+    el.innerHTML = player.name;
+    el.className = 'plr';
+    el.style.borderRadius = '0%';
+    el.style.width = `${playerSize}px`;
+    el.style.height = `${playerSize}px`;
+    if(player.shape == 'triangle') {
+      el.style.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)';
+    }else if(player.shape == 'circle') {
+      el.style.borderRadius = '50%';
+    }else if(player.shape == 'square') {
+      el.style.borderRadius = '0';
+    }else if (player.shape == 'star') {
+      el.style.borderRadius = '0';
+      el.style.clipPath = 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)';
+    }else if(player.shape == 'hexagon') {
+      el.style.borderRadius = '0';
+      el.style.clipPath = 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)';
+    }else if(player.shape == 'octagon') {
+      el.style.borderRadius = '0';
+      el.style.clipPath = 'polygon(50% 0%, 85% 15%, 100% 50%, 85% 85%, 50% 100%, 15% 85%, 0% 50%, 15% 15%)';
+    }else if (player.shape == 'pentagon') {
+      el.style.borderRadius = '0';
+      el.style.clipPath = 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)';
+    }else if (player.shape == 'heptagon') {
+      el.style.borderRadius = '0';
+      el.style.clipPath = 'polygon(50% 0%, 85% 15%, 100% 50%, 85% 85%, 50% 100%, 15% 85%, 0% 50%, 15% 15%)';
+    }
+    el.style.backgroundColor = player.color
+
+    if (isColorLight(player.color)) {
+      el.style.color = '#000000';
+    }
+
+    if(player.photo) {
+      el.style.backgroundImage = `url(${player.photo})`;
+      el.style.backgroundSize = 'cover';
+      el.style.backgroundPosition = 'center';
+    }
+
+    document.body.appendChild(el);
+  };
+
+  const updatePlayers = () => {
+    Object.values(players).forEach(player => {
+      const { body, id } = player;
+      const el = document.getElementById(id);
+      el.style.left = `${body.position.x - playerSize / 2}px`;
+      el.style.top = `${body.position.y - playerSize / 2}px`;
+    });
+  };
+
+  Events.on(engine, 'afterUpdate', updatePlayers);
+
+  socket.on('disconnect', function() {
+    console.log('Disconnected from server');
+    alert('You have been disconnected from the server');
+  });
+
+  socket.on('playerConnected', function(data) {
+    console.log('Player connected:', data);
+    document.getElementById('pl').style.visibility = 'visible';
+    document.getElementById('alert').innerText = `${data.name} has joined the game!`.toUpperCase();
+   setTimeout(() => {
+     document.getElementById('alert').innerText = '';
+   }, 1500);
+   const player = data
+   document.getElementById('pl').innerHTML += ` <div class="player" id="pl-${player.id}">
+            <div class="player-icon" style="background: ${player.photo ? `url(${player.photo})` : player.color}"></div>
+            <div class="player-info">
+                <span class="player-name">${player.name}</span>
+                <div class="player-stats">
+                    <span id="pl-${player.id}-l"> ❤️ ${lives}</span>
+                    <span id="pl-${player.id}-kb">💥 1.00</span>
+                    ${ 'GAMEMODE' == 'pc' || 'GAMEMODE' == 'koth' ? `<span id="pl-${player.id}-pts">0P</span>` : '' }
+                </div>
+            </div>
+        </div>`;
+    document.getElementById('pl').style.visibility = 'visible';
+    newPlayer(data);
+  });
+
+  socket.on('playerDisconnected', function(data) {
+    console.log('Player disconnected:', data);
+    const player = players[data];
+    if (player) {
+      World.remove(world, player.body);
+    }
+    if(players[data]) delete players[data];
+      if(document.getElementById(data)) document.getElementById(data).remove();
+      if(Object.keys(players).length === 0) {
+        document.getElementById('pl').style.visibility = 'hidden';
+      }
+
+      if(deathOrder.find(p => p.id === data)) {
+        deathOrder = deathOrder.filter(p => p.id !== data);
+      }
+
+      if(document.getElementById(`pl-${data}`)) document.getElementById(`pl-${data}`).remove();
+  });
+
+  Events.on(engine, 'beforeUpdate', function(event) {
+  Object.values(players).forEach(player => {
+    const { body, id } = player;
+
+    if (body.position.x < 0 || body.position.x > window.innerWidth || body.position.y < 0 || body.position.y > (window.innerHeight + 100)) {
+      Body.setVelocity(body, { x: 0, y: 0 });
+      player.lives -= 1;
+      player.jumpCount = 0;
+      player.isJumping = false;
+      player.knockback = 1;
+      document.getElementById(`pl-${id}-l`).innerText = `${player.lives}L`;
+      document.getElementById(`pl-${id}-kb`).innerText = `${player.knockback.toFixed(2)}KB`;
+      document.getElementById('alert').innerText = `${player.name} has lost a life!`.toUpperCase();
+      setTimeout(() => {
+        document.getElementById('alert').innerText = '';
+      }, 2000);
+      if (player.lives <= 0) {
+        World.remove(world, body);
+        document.getElementById('alert').innerText = `${player.name} has lost all lives!`.toUpperCase();
+        setTimeout(() => {
+          document.getElementById('alert').innerText = '';
+        }, 2000);
+        document.getElementById(id).remove();
+        delete players[id];
+        
+        // Add player to death order
+        deathOrder.push({ id: player.id, name: player.name });
+
+        // Check if all players have died
+        if (Object.keys(players).length <= 1) {
+          const lastPlayer = Object.values(players)[0];
+          if(!lastPlayer) return showLeaderboard();
+          deathOrder.push({ id: lastPlayer.id, name: lastPlayer.name });
+          showLeaderboard();
+        }
+      } else {
+        Body.setPosition(body, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+      }
+    }
+  });
+});
+
+socket.on('move', function(data) {
+  const player = players[data.id];
+  if (player) {
+    const { body } = player;
+
+    let velocityX = 0;
+    let velocityY = 0;
+
+    if (data.direction === 'forward') {
+      if (allowFlying === false) {
+        if (player.jumpCount < 2 && !player.isJumping) {
+          const jumpForce = -'JUMP_FORCE'; 
+          const gravity = 0.98; 
+
+          player.jumpCount++;
+          player.isJumping = true;
+          velocityY = jumpForce * (player.jumpBoost ? parseInt('JUMP_BOOST') : 1)
+
+          Body.setVelocity(body, { x: velocityX, y: velocityY });
+
+          Body.applyForce(body, body.position, { x: velocityX * 0.001, y: velocityY * 0.001 });
+
+          player.jumpInterval = setInterval(() => {
+            // Increase the downward velocity to simulate gravity
+            velocityY += gravity;
+
+            // Apply the updated velocity
+            Body.setVelocity(body, { x: velocityX, y: velocityY });
+          }, 100); 
+
+          setTimeout(() => {
+            clearInterval(player.jumpInterval);
+            player.isJumping = false;
+          }, 500);
+
+        }
+      } else {
+        velocityY = -data.speed;
+      }
+    } else if (data.direction === 'backward') {
+      velocityY = data.speed;
+    } else if (data.direction === 'left') {
+      velocityX = -data.speed * (player.speedBoost ? parseInt('SPEED_BOOST') : 1);
+    } else if (data.direction === 'right') {
+      velocityX = data.speed * (player.speedBoost ? parseInt('SPEED_BOOST') : 1);
+    }
+
+    Body.setVelocity(body, { x: velocityX, y: velocityY });
+    Body.applyForce(body, body.position, { x: velocityX * 0.001, y: velocityY * 0.001 });
+  }
+});
+
+if(!'IS_CUSTOM'){
+  setInterval(() => {
+    const x = Math.random() * window.innerWidth;
+    const y = Math.random() * window.innerHeight;
+    const width = Math.random() * 200 + 100;
+    const height = 10;
+
+    const platformColor = "'PLATFORM_BG'"
+
+const platform = Bodies.rectangle(x, y, width, height, {
+  isStatic: true,
+  label: 'platform',
+  render: {
+    fillStyle: platformColor,
+    strokeStyle: 'transparent'
+  }
+});
+
+
+    World.add(world, platform);
+
+    if (world.bodies.length > 10) {
+      const platform = world.bodies.find(body => body.label === 'platform');
+      World.remove(world, platform);
+    }
+  }, parseInt('PLATFORM_FREQ') * 1000);
+}
+
+if(typeof platforms === 'object'){
+  platforms.forEach(platform => {
+    const { x, y, width, height, color, rotation } = platform;
+    const _platform = Bodies.rectangle(x, y, width, height, {
+      isStatic: true,
+      label: 'platform',
+      render: {
+        fillStyle: color,
+        strokeStyle: 'transparent'
+      }
+    });
+    Body.rotate(_platform, rotation * (Math.PI / 180));
+    World.add(world, _platform);
+  });
+}
+
+function showLeaderboard() {
+document.getElementById('pl').style.display = 'none';
+  const leaderboard = deathOrder.reverse();
+  const leaderboardPlayers = document.getElementById('leaderboard-players');
+  Object.values(players).forEach(player => {
+    if (document.getElementById(player.id)) document.getElementById(player.id).remove();
+  });
+  leaderboardPlayers.innerHTML = '';
+  leaderboard.forEach((player, i) => {
+    const el = document.createElement('div');
+    el.style.marginTop = '10px';
+    el.innerText = `${i + 1}. ${player.name}`;
+    el.style.color = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : 'white';
+    el.style.fontSize = i === 0 ? '30px' : '20px';
+    leaderboardPlayers.appendChild(el);
+  });
+  document.getElementById('leaderboard').style.display = 'block';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'l'){
+    if(document.getElementById('leaderboard').style.display == 'block') return
+    Object.values(players).sort((a, b) => b.lives - a.lives).forEach(player => {
+      deathOrder.push({ id: player.id, name: player.name });
+    });
+    showLeaderboard();
+  }
+})
+
+Events.on(engine, 'collisionStart', function(event) {
+  console.log('Collision detected');
+  const pairs = event.pairs;
+  pairs.forEach(pair => {
+    const { bodyA, bodyB } = pair;
+
+    const playerA = players[bodyA.label];
+    const playerB = players[bodyB.label];
+
+    if (players[bodyA.label]) players[bodyA.label].jumpCount = 0;
+    if (players[bodyB.label]) players[bodyB.label].jumpCount = 0;
+
+
+    if (playerA && bodyB.label.includes('powerup') || playerB && bodyA.label.includes('powerup')) {
+      const player = players[playerA ? bodyA.label : bodyB.label]
+      const powerup = bodyA.label.includes('powerup') ? bodyA.label.split('-')[1] : bodyB.label.split('-')[1];
+      const powerup_id = bodyA.label.includes('powerup') ? bodyA.label.split('-')[2] : bodyB.label.split('-')[2];
+
+      if(powerup == 'speed') players[player.body.label].speedBoost = true;
+      if(powerup == 'jump') players[player.body.label].jumpBoost = true;
+      if(powerup == 'lives') {
+        players[player.body.label].lives += 1;
+        document.getElementById(`pl-${player.body.label}-l`).innerText = `${players[player.body.label].lives}L`;
+      }
+
+      console.log(player)
+
+
+      setTimeout(() => {
+        if(powerup == 'speed') players[player.body.label].speedBoost = false;
+        if(powerup == 'jump') players[player.body.label].jumpBoost = false;
+      }, 'POWERUP_DURATION' * 1000);
+
+      if(document.getElementById(powerup_id)) document.getElementById(powerup_id).remove();
+      World.remove(world, bodyB);
+      return
+    } 
+
+    if (playerA && playerB) {
+      document.getElementById('hit').play();
+
+      console.log('Player collision', playerA, playerB);
+
+      // Determine which player is hitting the other based on velocity
+      const velocityA = playerA.body.velocity;
+      const velocityB = playerB.body.velocity;
+      const speedA = Math.sqrt(velocityA.x * velocityA.x + velocityA.y * velocityA.y);
+      const speedB = Math.sqrt(velocityB.x * velocityB.x + velocityB.y * velocityB.y);
+
+      clearInterval(playerA.jumpInterval);
+      playerA.isJumping = false;  // Reset jumping state after jump sequence
+            if (playerA.jumpCount >= 2) {
+              playerA.jumpCount = 0;  // Reset jump count if limit is reached
+            }
+          clearInterval(playerB.jumpInterval);
+          playerB.isJumping = false;  // Reset jumping state after jump sequence
+          if (playerB.jumpCount >= 2) {
+            playerB.jumpCount = 0;  // Reset jump count if limit is reached
+          }
+
+      let hitter, hit;
+      if (speedA > speedB) {
+        hitter = playerA;
+        hit = playerB;
+      } else {
+        hitter = playerB;
+        hit = playerA;
+      }
+
+      // Increase knockback for the player that got hit
+      hit.knockback = hit.knockback ? hit.knockback + 0.05 : 1;
+      document.getElementById(`pl-${hit.id}-kb`).innerText = `${hit.knockback.toFixed(2)}KB`;
+
+      // Apply velocities to both players
+      const direction = { x: hit.body.position.x - hitter.body.position.x, y: hit.body.position.y - hitter.body.position.y };
+      const magnitude = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+      const normalizedDirection = { x: direction.x / magnitude, y: direction.y / magnitude };
+
+      Body.setVelocity(hitter.body, { x: -10 * normalizedDirection.x, y: -10 * normalizedDirection.y });
+      Body.setVelocity(hit.body, { x: 10 * normalizedDirection.x * hit.knockback, y: 10 * normalizedDirection.y * hit.knockback });
+    }
+  });
+});
+
+const POWERUP_TYPES = ['speed', 'jump', 'lives'];
+
+setInterval(() => {
+    let types = []
+    if('SPEED_BOOST' != 0) types.push('speed')
+    if('JUMP_BOOST' != 0) types.push('jump')
+    if('REGAIN_LIFE' != false) types.push('lives')
+    const x = Math.random() * window.innerWidth;
+    const y = Math.random() * window.innerHeight;
+    const width = 40;
+    const height = 40;
+    const id = Math.random().toString(36).substring(7);
+    const type = types[Math.floor(Math.random() * types.length)];
+
+    const powerup = Bodies.rectangle(x, y, width, height, {
+      isStatic: true,
+      label: 'powerup-' + type + '-' + id,
+      render: {
+        fillStyle: 'transparent'
+      }
+    });
+
+    const displayPowerup = document.createElement('div');
+    displayPowerup.style.position = 'absolute';
+    displayPowerup.style.left = `${x}px`;
+    displayPowerup.style.top = `${y}px`;
+    displayPowerup.style.width = `${width}px`;
+    displayPowerup.style.height = `${height}px`;
+    displayPowerup.style.borderRadius = '50%';
+    displayPowerup.id = id;
+
+    displayPowerup.style.display = 'flex';
+    displayPowerup.style.justifyContent = 'center';
+    displayPowerup.style.alignItems = 'center';
+    displayPowerup.style.fontFamily = 'sans-serif';
+    displayPowerup.style.color = 'white';
+    displayPowerup.style.fontSize = '30px';
+
+
+    console.log('Spawning powerup', type, x, y);
+
+    document.body.appendChild(displayPowerup);
+
+    if (type === 'speed') {
+      displayPowerup.innerHTML = '💨';
+    } else if (type === 'jump') {
+      displayPowerup.innerHTML = '🚀';
+    } else if (type === 'lives') {
+      displayPowerup.innerHTML = '❤️'
+    }
+
+    World.add(world, powerup);
+
+   setTimeout(() => {
+    console.log('Removing powerup', type);
+     if(document.getElementById(id)) document.getElementById(id).remove();
+     World.remove(world, powerup);
+   }, parseInt('POWERUP_DURATION') * 1000);
+  }, parseInt('POWERUP_FREQ') * 1000 + 1000);
+
+
+let PULSE_SHRINK_SCALE = 0.9981;
+let PULSE_EXPAND_SCALE = 1.0029;
+
+if (PULSE_PLATFORM == true) {
+    console.log('Pulsing platform width');
+    
+    let shrinking = true;
+
+    setInterval(() => {
+        const platform = world.bodies.find(body => body.label === 'floor');
+
+        if (!platform) {
+            console.error('Platform not found');
+        }
+
+        const currentWidth = platform.bounds.max.x - platform.bounds.min.x;
+
+        if (shrinking) {
+            if (currentWidth > 100) { // Continue shrinking
+                Body.scale(platform, 0.9981, 1);
+            } else { // Switch to expanding
+                shrinking = false;
+            }
+        } else {
+            const windowWidth = window.innerWidth;
+            if (currentWidth < windowWidth) { // Continue expanding
+                Body.scale(platform, 1.0029, 1);
+            } else { // Switch to shrinking
+                shrinking = true;
+            }
+        }
+
+    }, 10);
+}
+
+  document.getElementById('bg_music').play()
+
+</script>
